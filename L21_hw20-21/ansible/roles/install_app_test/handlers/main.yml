@@ -1,0 +1,4 @@
+---
+# handlers file for os_setting
+- name: Рестарт netplan
+  command: netplan apply

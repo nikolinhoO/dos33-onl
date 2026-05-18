@@ -1,0 +1,20 @@
+---
+# tasks file for deploy_default_app
+- name: Обновление пакетов apt
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Установка PostgreSQL
+  ansible.builtin.apt:
+    name: postgresql
+    state: present
+
+- name: Установка nginx
+  ansible.builtin.apt:
+    name: ntp
+    state: present
+
+- name: Установка ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present

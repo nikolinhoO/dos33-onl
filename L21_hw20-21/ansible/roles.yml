@@ -1,0 +1,25 @@
+---
+- name: Настройка Ubuntu Master psql 
+  hosts: master
+  become: true
+
+  roles:
+    - install_app
+    - os_setting 
+    - user_setting
+    - postgre_deploy
+
+
+- name: Настройка Ubuntu Replica psql 
+  hosts: replica
+  become: true
+
+  roles:
+    - postgre_replica
+
+- name: Проверка реплик на Master psql
+  hosts: master
+  become: true
+
+  roles:
+    - postgre_check_replica

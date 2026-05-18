@@ -1,0 +1,51 @@
+---
+# tasks file for user_setting
+
+- name: Копирование файла sudoers
+  copy:
+    src: sudoers
+    dest: /etc/sudoers
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -csf %s
+
+- name: Копирование файла sshd
+  copy:
+    src: 50-cloud-init.conf 
+    dest: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    owner: root
+    group: root
+    mode: '0600'
+  notify:
+    - Рестарт ssh
+
+- name: Создание пользователя test_1
+  ansible.builtin.user:
+    name: test_1
+    groups: aaa
+    append: yes
+    shell: /bin/bash
+    password_lock: yes
+    state: present
+
+- name: Копирование публчиного ключа для пользователя test_1
+  ansible.posix.authorized_key:
+    user: test_1
+    state: present
+    key: "{{ lookup('file', '~/test_1.pub') }}"
+
+- name: Создание пользователя test_2
+  ansible.builtin.user:
+    name: test_2
+    groups: bbb
+    append: yes
+    shell: /bin/bash
+    password_lock: yes
+    state: present
+
+- name: Копирование публчиного ключа для пользователя test_2
+  ansible.posix.authorized_key:
+    user: test_2
+    state: present
+    key: "{{ lookup('file', '~/test_2.pub') }}"

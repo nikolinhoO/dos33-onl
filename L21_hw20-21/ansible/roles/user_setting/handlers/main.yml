@@ -1,0 +1,6 @@
+---
+# handlers file for user_setting
+- name: Рестарт ssh
+  service:
+    name: ssh
+    state: restarted

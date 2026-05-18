@@ -1,0 +1,16 @@
+---
+# tasks file for postgre_check_replica
+
+- name: Рестарт Master-PostgreSQL
+  service:
+    name: postgresql
+    state: restarted
+
+- name: Показать pg_stat_replication
+  shell: sleep 10 && sudo -u postgres psql -c "SELECT * FROM pg_stat_replication;"
+  register: result_stat_replication
+
+- name: Отобразить переменную result_stat_replication
+  debug:
+    var: result_stat_replication.stdout_lines
+

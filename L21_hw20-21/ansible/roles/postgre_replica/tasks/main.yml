@@ -1,0 +1,31 @@
+---
+# tasks file for postgre_replica
+
+- name: Обновление пакетов apt
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: Установка PostgreSQL
+  ansible.builtin.apt:
+    name: postgresql
+    state: present
+
+- name: Удаление папки если она была создана
+  ansible.builtin.file:
+    path: /var/lib/postgresql/16/main
+    state: absent
+
+- name: Синхранизируем данные
+  command: pg_basebackup -h 192.168.1.100 -D /var/lib/postgresql/16/main -U replicator -Fp -Xs -P -R
+
+- name: Смена владельца рекурсивно на данные 
+  file:
+    path: /var/lib/postgresql/16/main
+    owner: postgres
+    recurse: true 
+    group: postgres
+
+- name: Рестарт Replica-PostgreSQL
+  service:
+    name: postgresql
+    state: restarted

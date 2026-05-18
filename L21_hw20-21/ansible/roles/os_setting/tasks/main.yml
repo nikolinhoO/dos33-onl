@@ -1,0 +1,66 @@
+---
+# tasks file for os_setting
+
+- name: Установка таймзоны - Europe/Moscow 
+  community.general.timezone:
+    name: Europe/Moscow
+
+- name: Копирование файла ntp.conf
+  copy:
+    src: ntp.conf
+    dest: /etc/ntpsec/ntp.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Копирование файла netplan
+  copy:
+    src: 00-installer-config.yaml
+    dest: /etc/netplan/00-installer-config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  notify:
+    - Рестарт netplan
+
+- name: Политика входящего трафика по умолчанию
+  community.general.ufw:
+    default: deny
+    direction: incoming
+    state: enabled
+
+- name: Политика исходящего трафика по умолчанию 
+  community.general.ufw:
+    default: allow
+    direction: outgoing
+    state: enabled
+
+- name: Разрешаем 22 порт 
+  community.general.ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+- name: Разрешаем 80 порт
+  community.general.ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+
+- name: Создание корневой директории
+  ansible.builtin.file:
+    path: /home/share
+    state: directory
+    group: root
+    owner: root
+    mode: "0777"
+
+- name: Настройка прав наследования для корневой директории
+  ansible.builtin.command:
+    cmd: chmod -R g+s /home/share
+
+- name: Создание директории от пользователя user3
+  ansible.builtin.file:
+    path: /home/share/example.log
+    state: touch
+    owner: user3
+    mode: "0700"

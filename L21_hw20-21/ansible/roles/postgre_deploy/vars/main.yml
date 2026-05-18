@@ -1,0 +1,6 @@
+---
+# vars file for postgre_deploy
+
+db_name: books_DB
+db_user: hw_nikolaev
+db_password: 123456
