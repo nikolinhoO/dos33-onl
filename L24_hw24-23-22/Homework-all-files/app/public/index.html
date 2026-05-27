@@ -1,0 +1,389 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Пинг-понг игра</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #222;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            border: 2px solid #fff;
+            background-color: #000;
+        }
+        #status, #scoreBoard {
+            margin-top: 10px;
+            font-size: 1.2em;
+        }
+        #controls {
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+<audio id="hitSound" src="sounds/hit.mp3"></audio>
+<audio id="scoreSound" src="sounds/score.mp3"></audio>
+<audio id="gameOverSound" src="sounds/gameover.mp3"></audio>
+<h1>Моя игра</h1>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="status">Connecting...</div>
+<div id="scoreBoard">Left: 0 | Right: 0</div>
+<div id="controls">
+    <button id="startBtn" disabled>Старт</button>
+    <button id="restartBtn" disabled>Рестарт</button>
+    <button id="changeRoomBtn">Смена комнаты</button>
+    <button id="pauseResumeBtn" disabled>Пауза</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusDiv = document.getElementById('status');
+    const scoreBoard = document.getElementById('scoreBoard');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const changeRoomBtn = document.getElementById('changeRoomBtn');
+    const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+    const paddleWidth = 20;
+    const paddleHeight = 100;
+    const moveSpeed = 5;
+    const ballRadius = 10;
+
+    const MAX_PADDLE_Y = canvas.height - paddleHeight;
+    const MIN_PADDLE_Y = 0;
+
+    // Paddle objects
+    const paddles = {
+        left: { x: 0, y: canvas.height / 2 - paddleHeight / 2 },
+        right: { x: canvas.width - paddleWidth, y: canvas.height / 2 - paddleHeight / 2 }
+    };
+
+    // Ball object
+    const ball = {
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        radius: ballRadius
+    };
+
+    // Track keys pressed
+    const keysPressed = {};
+
+    // Scores
+    let scoreLeft = 0;
+    let scoreRight = 0;
+
+    // Initialize WebSocket
+    let socket = null;
+    let player = null; // 'left' or 'right'
+    let roomID = null;
+    let gameOver = false;
+    let winner = null;
+    let isPaused = false;
+
+    function initWebSocket() {
+        socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+        socket.onopen = function() {
+            console.log("WebSocket connection established.");
+            statusDiv.textContent = "Connected. Waiting for room assignment...";
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            // console.log("Received message:", data);
+            if (data.type === 'assign') {
+                roomID = data.room_id;
+                player = data.player;
+                if (player === 'none') {
+                    statusDiv.textContent = "Game is full. Please try again later.";
+                    return;
+                }
+                statusDiv.textContent = `Room ID: ${roomID} | You are controlling the ${player} paddle.`;
+                // Enable Start Game button if player is 'right'
+                if (player === "right") {
+                    startBtn.disabled = false;
+                }
+            } else if (data.type === 'start_game') {
+                statusDiv.textContent = `Game started in Room: ${roomID}`;
+                startBtn.disabled = true;
+                restartBtn.disabled = false;
+                pauseResumeBtn.disabled = false;
+                gameOver = false;
+            } else if (data.type === 'update') {
+                // Ensure received y values are numbers
+                if (typeof data.leftY === 'number') {
+                    paddles.left.y = clampY(data.leftY);
+                } else {
+                    console.warn("Received invalid leftY:", data.leftY);
+                    paddles.left.y = MIN_PADDLE_Y;
+                }
+
+                if (typeof data.rightY === 'number') {
+                    paddles.right.y = clampY(data.rightY);
+                } else {
+                    console.warn("Received invalid rightY:", data.rightY);
+                    paddles.right.y = MIN_PADDLE_Y;
+                }
+
+                if (typeof data.ballX === 'number') {
+                    ball.x = data.ballX;
+                }
+                if (typeof data.ballY === 'number') {
+                    ball.y = data.ballY;
+                }
+
+                // Play hit sound if ball hits a paddle
+                if (data.hitPaddle) {
+                    document.getElementById('hitSound').play().catch(e => console.log('Hit sound play failed:', e));
+                }
+
+                // Update scores
+                if (typeof data.scoreLeft === 'number' && scoreLeft !== data.scoreLeft) {
+                    scoreLeft = data.scoreLeft;
+                    document.getElementById('scoreSound').play().catch(e => console.log('Score sound play failed:', e));
+                }
+                if (typeof data.scoreRight === 'number' && scoreRight !== data.scoreRight) {
+                    scoreRight = data.scoreRight;
+                    document.getElementById('scoreSound').play().catch(e => console.log('Score sound play failed:', e));
+                }
+                updateScoreBoard();
+            } else if (data.type === 'gameover') {
+                gameOver = true;
+                winner = data.winner;
+                if (winner === player) {
+                    statusDiv.textContent = "Game Over! You won! 🎉";
+                } else {
+                    statusDiv.textContent = "Game Over! You lost. 😢";
+                }
+                restartBtn.disabled = false;
+                document.getElementById('gameOverSound').play().catch(e => console.log('Game over sound play failed:', e));
+            } else if (data.type === 'score') {
+                if (typeof data.scoreLeft === 'number') {
+                    scoreLeft = data.scoreLeft;
+                }
+                if (typeof data.scoreRight === 'number') {
+                    scoreRight = data.scoreRight;
+                }
+                updateScoreBoard();
+            } else if (data.type === 'error') {
+                statusDiv.textContent = "Game is full. Please try again later.";
+            } else if (data.type === 'pause_game') {
+                isPaused = true;
+                pauseResumeBtn.textContent = 'Resume Game';
+                statusDiv.textContent = "Game paused.";
+            } else if (data.type === 'resume_game') {
+                isPaused = false;
+                pauseResumeBtn.textContent = 'Pause Game';
+                statusDiv.textContent = "Game resumed.";
+                gameLoop();
+            }
+        };
+
+        socket.onclose = function() {
+            console.log("WebSocket connection closed.");
+            statusDiv.textContent = "Disconnected.";
+        };
+
+        socket.onerror = function(error) {
+            console.error("WebSocket error:", error);
+            statusDiv.textContent = "WebSocket error.";
+        };
+    }
+
+    function handleGameStart() {
+       statusDiv.textContent = `Game started in Room: ${roomID}`;
+       startBtn.disabled = true;
+       restartBtn.disabled = false;
+       pauseResumeBtn.disabled = false;  // Enable pause/resume button
+   }
+
+    function handleGameOver() {
+        restartBtn.disabled = false;
+        pauseResumeBtn.disabled = true;  // Disable pause/resume button
+    }
+
+    // Clamping function on client-side
+    function clampY(y) {
+        const numY = Number(y);
+        if (isNaN(numY)) {
+            console.warn("Received invalid y:", y, "Clamping to 0");
+            return MIN_PADDLE_Y;
+        }
+        return Math.max(MIN_PADDLE_Y, Math.min(MAX_PADDLE_Y, numY));
+    }
+
+    // Handle key presses
+    window.addEventListener('keydown', (e) => {
+        keysPressed[e.key] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        keysPressed[e.key] = false;
+    });
+
+    function updatePaddlePosition() {
+        if (!player || gameOver) return; // Wait for assignment or game over
+
+        let newY = paddles[player].y;
+        
+        if (keysPressed['ArrowUp'] || keysPressed['w']) {
+            newY -= moveSpeed;
+        }
+        if (keysPressed['ArrowDown'] || keysPressed['s']) {
+            newY += moveSpeed;
+        }
+
+        // Boundary checks
+        newY = clampY(newY);
+
+        if (newY !== paddles[player].y) {
+            paddles[player].y = newY;
+            sendPaddlePosition();
+        }
+    }
+
+    function sendPaddlePosition() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            const y = paddles[player].y;
+            if (typeof y !== 'number' || isNaN(y)) {
+                console.warn("Attempted to send invalid y position:", y);
+                return;
+            }
+            const message = {
+                type: 'move',
+                room_id: roomID,
+                player: player,
+                y: y
+            };
+            console.log("Sending message:", message);
+            socket.send(JSON.stringify(message));
+        }
+    }
+
+    function render() {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw paddles
+        ctx.fillStyle = '#fff';
+        // Left paddle
+        ctx.fillRect(paddles.left.x, paddles.left.y, paddleWidth, paddleHeight);
+        // Right paddle
+        ctx.fillRect(paddles.right.x, paddles.right.y, paddleWidth, paddleHeight);
+
+        // Draw ball
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff0000';
+        ctx.fill();
+        ctx.closePath();
+
+        // Draw "Game Over" message if game is over
+        if (gameOver) {
+            ctx.fillStyle = '#fff';
+            ctx.font = '48px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2);
+        }
+    }
+
+    function updateScoreBoard() {
+        scoreBoard.textContent = `Left: ${scoreLeft} | Right: ${scoreRight}`;
+    }
+
+    function gameLoop() {
+        if (!isPaused && !gameOver) {
+            updatePaddlePosition();
+        }
+        render();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Start Game Button Handler
+    startBtn.addEventListener('click', () => {
+        if (socket && socket.readyState === WebSocket.OPEN && roomID) {
+            const message = {
+                type: 'start_game',
+                room_id: roomID
+            };
+            socket.send(JSON.stringify(message));
+            statusDiv.textContent = "Game started!";
+            startBtn.disabled = true;
+            restartBtn.disabled = false;
+        }
+    });
+
+    // Restart Game Button Handler
+    restartBtn.addEventListener('click', () => {
+        if (socket && socket.readyState === WebSocket.OPEN && roomID) {
+            const message = {
+                type: 'restart_game',
+                room_id: roomID
+            };
+            socket.send(JSON.stringify(message));
+            statusDiv.textContent = "Game restarted!";
+            restartBtn.disabled = true;
+            gameOver = false;
+            winner = null;
+            ResetGame();
+        }
+    });
+
+    // Change Room Button Handler
+    changeRoomBtn.addEventListener('click', () => {
+        if (socket && socket.readyState === WebSocket.OPEN && roomID) {
+            const message = {
+                type: 'room_change',
+                room_id: roomID
+            };
+            socket.send(JSON.stringify(message));
+            statusDiv.textContent = "Changing room...";
+            // Reset client-side state
+            ResetGame();
+        }
+    });
+
+    pauseResumeBtn.addEventListener('click', () => {
+       if (socket && socket.readyState === WebSocket.OPEN && roomID) {
+           const messageType = isPaused ? 'resume_game' : 'pause_game';
+           const message = { type: messageType, room_id: roomID };
+           socket.send(JSON.stringify(message));
+           isPaused = !isPaused;
+           pauseResumeBtn.textContent = isPaused ? 'Resume Game' : 'Pause Game';
+       }
+    });
+
+    function ResetGame() {
+        paddles.left.y = canvas.height / 2 - paddleHeight / 2;
+        paddles.right.y = canvas.height / 2 - paddleHeight / 2;
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        scoreLeft = 0;
+        scoreRight = 0;
+        updateScoreBoard();
+        gameOver = false;
+        winner = null;
+        startBtn.disabled = true;
+        restartBtn.disabled = true;
+    }
+
+    // Initialize everything
+    window.onload = function() {
+        initWebSocket();
+        gameLoop();
+    };
+</script>
+</body>
+</html>

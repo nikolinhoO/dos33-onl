@@ -1,0 +1,17 @@
+# Temporary files
+*.tmp
+*.log
+
+# Git files
+.git
+.gitignore
+
+# Secrets
+#.env
+#.env.*
+#*.env
+secrest/
+keys/
+certs/
+*.key
+*.pem
